@@ -65,5 +65,6 @@ make demo    # end-to-end: violating plan -> covered verdict
 
 Milestone 2 exposes the same engine as an MCP stdio server
 (`search_policies`, `explain_rule`, `eval_against_plan`) so Copilot/Claude
-narrate over grounded evidence. Design doc and review history live in
-`~/.gstack/projects/regoxplain/`.
+narrate over grounded evidence. The full design — answer model, verdict
+semantics, milestones, and every reviewed decision — lives in
+[docs/DESIGN.md](docs/DESIGN.md).

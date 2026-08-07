@@ -3,7 +3,7 @@
 ## 0.1.0 — 2026-08-06
 
 Milestone 1: the evidence engine, per the approved design doc
-(`~/.gstack/projects/regoxplain/yorozu-main-design-20260806-183814.md`).
+([docs/DESIGN.md](docs/DESIGN.md)).
 
 - **Indexer** — per-file tolerant parsing, whole-set compilation (CI
   fidelity), refs from compiled AST (imports resolved), literals and
