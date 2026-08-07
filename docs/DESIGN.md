@@ -94,7 +94,9 @@ Milestone 2 (SHIPPED v0.2.0) — **MCP server, the primary interface** (fast fol
 - `explain_rule` (core requirement, elevated at approval): given a rule path (e.g. `data.s3.deny`) or a `.rego` file, assemble a **grounded context bundle**: the rule's source, its related files resolved from the index (imports and one-level helper dependencies, cross-package), metadata/annotations, its extracted refs, and — when a plan is supplied — eval evidence. The bundle is what the host model narrates from, so explanations cite real file:line locations instead of hallucinating.
 - `regoxplain explain <rule-path|file>` also exists as a CLI subcommand with **no LLM required**: it prints the same context bundle as readable text (source + related files + evidence). Useful standalone, and paste-able into any chat when MCP isn't available — this is also the no-MCP fallback if work restricts local MCP servers.
 
-Milestone 3 (optional) — direct narration, only if wanted later:
+Milestone 3 (SHIPPED v0.3.0 — REVISED): **the TUI**, promoted from "optional future" because work's org policy blocked MCP in Copilot and the terminal is the one interface a workplace cannot disable (the "if ever actually missed" revisit trigger fired). Live AST search + explain bundles + explicit ctrl+e evaluation; pure frontend over the engine API.
+
+Milestone 3.5 (optional) — direct narration, only if wanted later:
 - OpenAI-format LLM client (`~/.config/regoxplain/config.toml`: `base_url`, `api_key_env`, `model`, env-overridable) so CLI `explain` can produce prose itself, labeled `unverified LLM opinion`. Conditional on an API key materializing (gateway, or Copilot-derived if terms permit) or local Ollama. A TUI would slot here too if ever actually missed — currently dropped.
 
 Milestone 4 (stretch) — verification deepening:

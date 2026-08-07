@@ -67,6 +67,18 @@ make test    # full suite against GCP-flavored fixtures in testdata/
 make demo    # end-to-end: violating plan -> covered verdict
 ```
 
+## TUI (works anywhere a terminal works)
+
+```
+regoxplain tui --repo /path/to/policies --plan plan.json --input-mode envelope:plan
+```
+
+Type to search (free text, repo-derived vocabulary), ↑/↓ to browse matches
+with each rule's grounded bundle in the evidence pane, **ctrl+e** to evaluate
+against the plan — the verdict bar upgrades from `backed-by-AST only` to
+`verified-by-eval`. Built for environments where MCP is policy-blocked:
+if you have a terminal, you have the tool.
+
 ## MCP server (use it from Copilot / Claude)
 
 `regoxplain mcp` exposes the engine as MCP tools over stdio —
