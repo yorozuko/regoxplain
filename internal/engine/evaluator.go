@@ -145,7 +145,7 @@ func Evaluate(ctx context.Context, ix *Index, compiler *ast.Compiler, opts EvalO
 			rs, evalErr := pq.Eval(ctx, rego.EvalInput(in.Value))
 			if evalErr != nil {
 				if ctx.Err() != nil {
-					return nil, nil, fmt.Errorf("evaluation exceeded %s (raise with --eval-timeout): %w", timeout, ctx.Err())
+					return nil, nil, fmt.Errorf("evaluation exceeded %s — raise the evaluation timeout: %w", timeout, ctx.Err())
 				}
 				return nil, nil, fmt.Errorf("evaluating %s: %w", path, evalErr)
 			}

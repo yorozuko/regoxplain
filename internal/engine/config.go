@@ -78,6 +78,11 @@ func (c *Config) InputModeFor(repoPath string) string {
 	return string(ModeRaw)
 }
 
+// CanonicalPath resolves a path to its absolute, symlink-free form — the
+// one identity used for config lookups and engine-cache keys ("/tmp" vs
+// "/private/tmp" vs a trailing slash must not create distinct engines).
+func CanonicalPath(p string) string { return canonicalPath(p) }
+
 func canonicalPath(p string) string {
 	abs, err := filepath.Abs(strings.TrimRight(p, "/"))
 	if err != nil {

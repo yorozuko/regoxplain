@@ -63,8 +63,40 @@ make test    # full suite against GCP-flavored fixtures in testdata/
 make demo    # end-to-end: violating plan -> covered verdict
 ```
 
-Milestone 2 exposes the same engine as an MCP stdio server
-(`search_policies`, `explain_rule`, `eval_against_plan`) so Copilot/Claude
-narrate over grounded evidence. The full design — answer model, verdict
-semantics, milestones, and every reviewed decision — lives in
-[docs/DESIGN.md](docs/DESIGN.md).
+## MCP server (use it from Copilot / Claude)
+
+`regoxplain mcp` exposes the engine as MCP tools over stdio —
+`search_policies`, `explain_rule`, `eval_against_plan` — so the chat you
+already use becomes the interface. The model narrates; the engine's verdicts
+and evidence labels stay authoritative.
+
+**VS Code / GitHub Copilot** — add `.vscode/mcp.json` in the policy repo
+(or your user config):
+
+```json
+{
+  "servers": {
+    "regoxplain": {
+      "type": "stdio",
+      "command": "regoxplain",
+      "args": ["mcp", "--repo", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
+Then in Copilot Chat (Agent mode): *"Is a public GCS bucket denied by our
+policies? Check against plan.json"* — Copilot calls the tools and cites the
+engine's file:line claims.
+
+**Claude Code:**
+
+```bash
+claude mcp add regoxplain -- regoxplain mcp --repo .
+```
+
+The binary must be on `PATH` (`make build` then copy `bin/regoxplain`, or
+`go install github.com/yorozuko/regoxplain/cmd/regoxplain@latest`).
+
+The full design — answer model, verdict semantics, milestones, and every
+reviewed decision — lives in [docs/DESIGN.md](docs/DESIGN.md).

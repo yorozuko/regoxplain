@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.0 — 2026-08-06
+
+Milestone 2: the MCP server — regoxplain becomes conversational
+([docs/DESIGN.md](docs/DESIGN.md), Approach C).
+
+- **`regoxplain mcp [--repo]`** — stdio MCP server on the official
+  `modelcontextprotocol/go-sdk`; Copilot/Claude launch it as a subprocess
+  (no port, no daemon) and narrate over the engine's grounded evidence.
+- **Tools** (1:1 on the engine API, schemas generated from typed inputs):
+  - `search_policies` — structured/free-term search, optional real evaluation
+    against a plan; returns verdict + per-claim evidence labels in both text
+    and structured content.
+  - `explain_rule` — the grounded context bundle (source, cross-package
+    helper deps, refs, metadata) with file:line citations for narration.
+  - `eval_against_plan` — all deny/violation/warn entrypoints against a plan,
+    with tracer body attribution; the D9 missing-data hard error surfaces as
+    a tool error naming the document.
+- Engines are cached per repo and shared across concurrent tool calls
+  (mutex + hash-based staleness — race-tested via in-process MCP client).
+- README: registration snippets for VS Code/Copilot (`.vscode/mcp.json`)
+  and Claude Code.
+
+
 ## 0.1.0 — 2026-08-06
 
 Milestone 1: the evidence engine, per the approved design doc
