@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/yorozu/regoxplain/internal/engine"
 )
@@ -45,7 +47,10 @@ func main() {
 	}
 }
 
-var version = "0.1.0"
+// version is stamped by the Makefile / release workflow via
+// -ldflags "-X main.version=...". The fallback marks unstamped dev builds
+// so `regoxplain version` never contradicts the VERSION file.
+var version = "dev"
 
 func usage() {
 	fmt.Fprint(os.Stderr, `regoxplain — grounded Rego policy comprehension for terraform gates
@@ -65,6 +70,7 @@ type common struct {
 	dataDir          string
 	query            string
 	allowMissingData bool
+	evalTimeout      time.Duration
 }
 
 func commonFlags(fs *flag.FlagSet) *common {
@@ -74,6 +80,7 @@ func commonFlags(fs *flag.FlagSet) *common {
 	fs.StringVar(&c.dataDir, "data", "", "directory of *.json data documents")
 	fs.StringVar(&c.query, "query", "", "narrow to a package: data.<pkg>")
 	fs.BoolVar(&c.allowMissingData, "allow-missing-data", false, "evaluate even when data.* refs are unsupplied (verdict capped)")
+	fs.DurationVar(&c.evalTimeout, "eval-timeout", 30*time.Second, "bound on policy evaluation time")
 	return c
 }
 
@@ -114,7 +121,16 @@ func cmdSearch(args []string, presetTerms []string) error {
 		Resources: splitCSV(*resources),
 		Attrs:     splitCSV(*attrs),
 	}
-	return runSearch(c, params, nil)
+	cfg, err := engine.LoadConfig()
+	if err != nil {
+		return err
+	}
+	eng := engine.New(c.repo)
+	ix, err := eng.Ensure()
+	if err != nil {
+		return err
+	}
+	return runSearch(c, cfg, eng, ix, params, nil)
 }
 
 func cmdAsk(args []string) error {
@@ -143,19 +159,12 @@ func cmdAsk(args []string) error {
 			engine.VerdictNotProven, strings.Join(misses, ", "))
 		return nil
 	}
-	return runSearch(c, engine.SearchParams{Terms: terms}, misses)
+	// Reuse the loaded config and index — a second Ensure would re-walk
+	// and re-hash the whole repo for nothing.
+	return runSearch(c, cfg, eng, ix, engine.SearchParams{Terms: terms}, misses)
 }
 
-func runSearch(c *common, params engine.SearchParams, misses []string) error {
-	cfg, err := engine.LoadConfig()
-	if err != nil {
-		return err
-	}
-	eng := engine.New(c.repo)
-	ix, err := eng.Ensure()
-	if err != nil {
-		return err
-	}
+func runSearch(c *common, cfg *engine.Config, eng *engine.Engine, ix *engine.Index, params engine.SearchParams, misses []string) error {
 	matches := engine.Search(ix, params)
 
 	var evals map[string]*engine.EvalResult
@@ -176,8 +185,10 @@ func runSearch(c *common, params engine.SearchParams, misses []string) error {
 				QueryPrefix:      c.query,
 				AllowMissingData: c.allowMissingData,
 				OnlyRulePaths:    paths,
+				Timeout:          c.evalTimeout,
 			}
-			evals, typesInPlan, err = engine.Evaluate(context.Background(), ix, opts)
+			var err error
+			evals, typesInPlan, err = engine.Evaluate(context.Background(), ix, eng.Compiler(), opts)
 			if err != nil {
 				return err
 			}
@@ -216,8 +227,9 @@ func cmdEval(args []string) error {
 		DataDir:          c.dataDir,
 		QueryPrefix:      c.query,
 		AllowMissingData: c.allowMissingData,
+		Timeout:          c.evalTimeout,
 	}
-	evals, _, err := engine.Evaluate(context.Background(), ix, opts)
+	evals, _, err := engine.Evaluate(context.Background(), ix, eng.Compiler(), opts)
 	if err != nil {
 		return err
 	}
@@ -280,17 +292,11 @@ func splitCSV(s string) []string {
 }
 
 func sortedKeys(m map[string]*engine.EvalResult) []string {
-	var out []string
+	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
 	}
-	for i := 0; i < len(out); i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j] < out[i] {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
-	}
+	sort.Strings(out)
 	return out
 }
 

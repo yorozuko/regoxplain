@@ -43,17 +43,20 @@ func LoadPlan(path string, mode string) ([]PlanInput, map[string]bool, error) {
 		return nil, nil, err
 	}
 
-	// Binary `terraform plan -out` files are zip archives ("PK...") — the
-	// classic wrong-file slip. Catch it with a named fix.
-	if bytes.HasPrefix(data, []byte("PK")) || !json.Valid(data) {
-		if bytes.HasPrefix(data, []byte("PK")) || bytes.Contains(data[:min(len(data), 512)], []byte{0}) {
-			return nil, nil, adapterErrf("%s looks like a binary terraform planfile, not plan JSON — run: terraform show -json <planfile> > plan.json", path)
-		}
-		return nil, nil, adapterErrf("%s is not valid JSON — expected `terraform show -json` output", path)
-	}
-
+	// Parse first; diagnose only on failure (avoids double-scanning large
+	// plans with json.Valid). Binary `terraform plan -out` files are zip
+	// archives ("PK...") — the classic wrong-file slip, named explicitly.
+	const binarySniffBytes = 512
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
+		isZip := bytes.HasPrefix(data, []byte("PK"))
+		hasNUL := bytes.Contains(data[:min(len(data), binarySniffBytes)], []byte{0})
+		if isZip || hasNUL {
+			return nil, nil, adapterErrf("%s looks like a binary terraform planfile, not plan JSON — run: terraform show -json <planfile> > plan.json", path)
+		}
+		if !json.Valid(data) {
+			return nil, nil, adapterErrf("%s is not valid JSON — expected `terraform show -json` output", path)
+		}
 		return nil, nil, adapterErrf("%s is not a JSON object — expected `terraform show -json` output", path)
 	}
 
@@ -113,9 +116,12 @@ func LoadPlan(path string, mode string) ([]PlanInput, map[string]bool, error) {
 // than evaluating a schema we do not understand.
 func validatePlanShape(plan map[string]any, path string) error {
 	fv, hasFV := plan["format_version"].(string)
-	_, hasRC := plan["resource_changes"]
+	rc, hasRC := plan["resource_changes"]
 	if !hasFV || !hasRC {
 		return adapterErrf("%s is JSON but not a terraform plan (missing format_version and/or resource_changes) — expected `terraform show -json` output", path)
+	}
+	if _, isList := rc.([]any); !isList {
+		return adapterErrf("%s has resource_changes but it is not a list — malformed plan; regenerate with terraform show -json", path)
 	}
 	if !strings.HasPrefix(fv, "1.") && !strings.HasPrefix(fv, "0.") {
 		return adapterErrf("%s has plan format_version %q which this tool does not recognize — verdicts would be unreliable; file an issue with your terraform version", path, fv)

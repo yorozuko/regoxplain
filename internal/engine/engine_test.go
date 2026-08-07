@@ -407,7 +407,7 @@ func TestAdapterRejectsNonPlanJSONAndUnknownMode(t *testing.T) {
 func evalStorage(t *testing.T, plan string) (map[string]*EvalResult, map[string]bool) {
 	t.Helper()
 	ix := fixtureIx(t)
-	evals, types, err := Evaluate(context.Background(), ix, EvalOptions{
+	evals, types, err := Evaluate(context.Background(), ix, nil, EvalOptions{
 		PlanPath:    planPath(t, plan),
 		InputMode:   "raw",
 		QueryPrefix: "data.terraform.storage",
@@ -535,11 +535,16 @@ func TestWarnFiresAsCoveredWarnOnly(t *testing.T) {
 	if !foundWarnOnly {
 		t.Fatalf("warn claim should carry warn-only annotation: %+v", ans.Claims)
 	}
+	// Review D1: a warn detects but does not block — it must never push the
+	// top-line verdict to covered.
+	if ans.Verdict == VerdictCovered {
+		t.Fatalf("warn-only firing must not yield covered, got %q", ans.Verdict)
+	}
 }
 
 func TestMissingDataIsHardError(t *testing.T) {
 	ix := fixtureIx(t)
-	_, _, err := Evaluate(context.Background(), ix, EvalOptions{
+	_, _, err := Evaluate(context.Background(), ix, nil, EvalOptions{
 		PlanPath:    planPath(t, "violating.json"),
 		InputMode:   "raw",
 		QueryPrefix: "data.terraform.iam",
@@ -556,7 +561,7 @@ func TestMissingDataIsHardError(t *testing.T) {
 func TestEvalWithDataAndAllowMissingEscape(t *testing.T) {
 	ix := fixtureIx(t)
 	dataDir := filepath.Join("..", "..", "testdata", "data")
-	evals, _, err := Evaluate(context.Background(), ix, EvalOptions{
+	evals, _, err := Evaluate(context.Background(), ix, nil, EvalOptions{
 		PlanPath:    planPath(t, "violating.json"),
 		InputMode:   "raw",
 		DataDir:     dataDir,
@@ -571,7 +576,7 @@ func TestEvalWithDataAndAllowMissingEscape(t *testing.T) {
 	}
 
 	// Escape hatch: evaluate anyway, verdict capped by BuildAnswer.
-	evals2, types2, err := Evaluate(context.Background(), ix, EvalOptions{
+	evals2, types2, err := Evaluate(context.Background(), ix, nil, EvalOptions{
 		PlanPath:         planPath(t, "violating.json"),
 		InputMode:        "raw",
 		QueryPrefix:      "data.terraform.iam",
@@ -595,7 +600,7 @@ func TestEvalRefusedOnBrokenRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = Evaluate(context.Background(), ix, EvalOptions{
+	_, _, err = Evaluate(context.Background(), ix, nil, EvalOptions{
 		PlanPath:  planPath(t, "violating.json"),
 		InputMode: "raw",
 	})

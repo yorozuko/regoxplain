@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -46,17 +47,44 @@ func LoadConfig() (*Config, error) {
 	if cfg.Repos == nil {
 		cfg.Repos = map[string]RepoConfig{}
 	}
+	// Normalize alias keys through the same tokenizer ask() uses — a key
+	// like "Public" or "public_access" would otherwise never match any
+	// question token and the alias would be silently dead.
+	normalized := map[string][]string{}
+	for key, vals := range cfg.Aliases {
+		for _, tok := range tokenize(key) {
+			normalized[tok] = dedupe(append(normalized[tok], vals...))
+		}
+	}
+	cfg.Aliases = normalized
 	return cfg, nil
 }
 
 // InputModeFor returns the configured input_mode for a repo path, defaulting
-// to raw (the conftest convention).
+// to raw (the conftest convention). Both sides are cleaned and symlink-
+// resolved before comparison: on macOS /tmp vs /private/tmp (or a trailing
+// slash in the config key) would otherwise silently fall back to raw — the
+// exact "quietly wrong input_mode" failure this config exists to prevent.
 func (c *Config) InputModeFor(repoPath string) string {
-	abs, err := filepath.Abs(repoPath)
-	if err == nil {
-		if rc, ok := c.Repos[abs]; ok && rc.InputMode != "" {
+	want := canonicalPath(repoPath)
+	for key, rc := range c.Repos {
+		if rc.InputMode == "" {
+			continue
+		}
+		if canonicalPath(key) == want {
 			return rc.InputMode
 		}
 	}
 	return string(ModeRaw)
+}
+
+func canonicalPath(p string) string {
+	abs, err := filepath.Abs(strings.TrimRight(p, "/"))
+	if err != nil {
+		return p
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }

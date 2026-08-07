@@ -15,20 +15,31 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(dir)
 	binPath = filepath.Join(dir, "regoxplain")
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
+		os.RemoveAll(dir)
 		panic("building regoxplain for e2e: " + err.Error())
 	}
-	os.Exit(m.Run())
+	// os.Exit skips defers — clean up explicitly or every run leaks a dir.
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command(binPath, args...)
-	cmd.Env = append(os.Environ(), "REGOXPLAIN_CACHE_DIR="+t.TempDir())
+	// Full config/cache isolation: without HOME/XDG overrides the tests
+	// would read the developer's real ~/.config/regoxplain/config.toml —
+	// a malformed or alias-bearing config would fail or skew every test.
+	iso := t.TempDir()
+	cmd.Env = append(os.Environ(),
+		"REGOXPLAIN_CACHE_DIR="+t.TempDir(),
+		"HOME="+iso,
+		"XDG_CONFIG_HOME="+iso,
+	)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {

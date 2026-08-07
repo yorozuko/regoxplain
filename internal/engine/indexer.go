@@ -13,9 +13,18 @@ import (
 // compiles the parseable set as a whole (Rego compiles module-set-wide),
 // extracts rules, refs, one-level deps, and the repo-derived vocabulary.
 func BuildIndex(repoPath string) (*Index, error) {
+	ix, _, err := buildIndexFull(repoPath)
+	return ix, err
+}
+
+// buildIndexFull additionally returns the compiler so the Engine can retain
+// it — Evaluate must never re-parse the repo from disk (review D2: double
+// work, and a file changing between Ensure and Evaluate would make claims
+// cite stale rows). Compiler is nil when compilation failed.
+func buildIndexFull(repoPath string) (*Index, *ast.Compiler, error) {
 	abs, err := filepath.Abs(repoPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ix := &Index{
 		Version:    IndexVersion,
@@ -25,17 +34,18 @@ func BuildIndex(repoPath string) (*Index, error) {
 
 	modules, hashes, errs, err := loadModules(abs)
 	if err != nil {
-		return nil, fmt.Errorf("walking %s: %w", abs, err)
+		return nil, nil, fmt.Errorf("walking %s: %w", abs, err)
 	}
 	ix.FileHashes = hashes
 	ix.Errors = errs
 	if len(modules) == 0 && len(ix.Errors) == 0 {
-		return nil, fmt.Errorf("no .rego files found under %s", abs)
+		return nil, nil, fmt.Errorf("no .rego files found under %s", abs)
 	}
 
-	compiler := ast.NewCompiler().WithEnablePrintStatements(true)
+	compiler := newCompiler()
 	compiler.Compile(modules)
-	if compiler.Failed() {
+	compiledOK := !compiler.Failed()
+	if !compiledOK {
 		for _, cerr := range compiler.Errors {
 			ix.CompileErrors = append(ix.CompileErrors, cerr.Error())
 		}
@@ -55,7 +65,7 @@ func BuildIndex(repoPath string) (*Index, error) {
 		}
 	}
 	refSource := modules
-	if !compiler.Failed() {
+	if compiledOK {
 		refSource = compiler.Modules
 	}
 
@@ -93,7 +103,10 @@ func BuildIndex(repoPath string) (*Index, error) {
 	propagateHelperRefs(ix)
 	ix.Vocab = buildVocab(ix)
 	ix.sortForDeterminism()
-	return ix, nil
+	if !compiledOK {
+		return ix, nil, nil
+	}
+	return ix, compiler, nil
 }
 
 func locKey(file string, row int) string {
@@ -227,38 +240,75 @@ func propagateHelperRefs(ix *Index) {
 		r := &ix.Rules[i]
 		byPath[r.Path] = append(byPath[r.Path], r)
 	}
+	// Snapshot ORIGINAL refs per path before any mutation. Propagating while
+	// mutating made multi-level chains propagate flakily depending on Go map
+	// iteration order — same repo, different index, flaky D9 gate.
+	origByPath := map[string][]RefInfo{}
 	for i := range ix.Rules {
 		r := &ix.Rules[i]
-		direct := map[string]bool{}
-		for _, ref := range r.Refs {
-			direct[ref.Ref] = true
+		origByPath[r.Path] = append(origByPath[r.Path], r.Refs...)
+	}
+	isRulePath := func(ref string) bool { return len(byPath[ref]) > 0 }
+
+	// extDataRefs: transitive closure of EXTERNAL data.* refs reachable
+	// through the helper dependency graph. One-level propagation is enough
+	// for search evidence, but the D9 missing-data gate must see exemption
+	// documents behind deny -> helper1 -> helper2 -> data.allowlist chains,
+	// or absent data silently inverts verdicts.
+	memo := map[string][]string{}
+	var extDataRefs func(path string, seen map[string]bool) []string
+	extDataRefs = func(path string, seen map[string]bool) []string {
+		if cached, ok := memo[path]; ok {
+			return cached
 		}
-		for _, ref := range r.Refs {
+		if seen[path] {
+			return nil
+		}
+		seen[path] = true
+		var out []string
+		for _, ref := range origByPath[path] {
 			if !strings.HasPrefix(ref.Ref, "data.") {
 				continue
 			}
-			helpers, ok := byPath[ref.Ref]
-			if !ok || ref.Ref == r.Path {
+			if isRulePath(ref.Ref) {
+				out = append(out, extDataRefs(ref.Ref, seen)...)
+			} else {
+				out = append(out, ref.Ref)
+			}
+		}
+		out = dedupe(out)
+		memo[path] = out
+		return out
+	}
+
+	for i := range ix.Rules {
+		r := &ix.Rules[i]
+		direct := map[string]bool{}
+		for _, ref := range origByPath[r.Path] {
+			direct[ref.Ref] = true
+		}
+		for _, ref := range origByPath[r.Path] {
+			if !strings.HasPrefix(ref.Ref, "data.") || !isRulePath(ref.Ref) || ref.Ref == r.Path {
 				continue
 			}
 			r.Deps = append(r.Deps, ref.Ref)
-			for _, h := range helpers {
-				for _, href := range h.Refs {
-					if direct[href.Ref] {
-						continue
-					}
-					// Propagate input refs and EXTERNAL data refs (a helper
-					// consulting data.exemptions.* makes its caller depend on
-					// that document — the D9 missing-data gate must see it).
-					isInput := strings.HasPrefix(href.Ref, "input")
-					isExternalData := strings.HasPrefix(href.Ref, "data.") && len(byPath[href.Ref]) == 0
-					if isInput || isExternalData {
-						direct[href.Ref] = true
-						r.Refs = append(r.Refs, RefInfo{Ref: href.Ref, Indirect: true})
-					}
+			// One-level evidence propagation reads SNAPSHOTS only.
+			for _, href := range origByPath[ref.Ref] {
+				if !direct[href.Ref] && strings.HasPrefix(href.Ref, "input") {
+					direct[href.Ref] = true
+					r.Refs = append(r.Refs, RefInfo{Ref: href.Ref, Indirect: true})
 				}
+			}
+			for _, h := range byPath[ref.Ref] {
 				r.IndirectLiterals = dedupe(append(r.IndirectLiterals, h.Literals...))
 				r.IndirectAttrs = dedupe(append(r.IndirectAttrs, h.Attrs...))
+			}
+		}
+		// Deep external data refs (any depth) — the D9 gate's evidence.
+		for _, ext := range extDataRefs(r.Path, map[string]bool{}) {
+			if !direct[ext] {
+				direct[ext] = true
+				r.Refs = append(r.Refs, RefInfo{Ref: ext, Indirect: true})
 			}
 		}
 		r.Deps = dedupe(r.Deps)

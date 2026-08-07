@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/open-policy-agent/opa/v1/ast"
 )
 
 // Engine owns the in-memory index and refreshes it when the repo changes.
@@ -18,8 +20,9 @@ import (
 type Engine struct {
 	RepoPath string
 
-	mu    sync.Mutex
-	index *Index
+	mu       sync.Mutex
+	index    *Index
+	compiler *ast.Compiler // retained from the last build (review D2); nil after warm start
 }
 
 func New(repoPath string) *Engine {
@@ -39,16 +42,23 @@ func (e *Engine) Ensure() (*Index, error) {
 	if e.index != nil && !e.stale(e.index) {
 		return e.index, nil
 	}
-	ix, err := BuildIndex(e.RepoPath)
+	ix, compiler, err := buildIndexFull(e.RepoPath)
 	if err != nil {
 		return nil, err
 	}
-	if err := ix.SaveCache(); err == nil {
-		// cache write best-effort: in-memory index is authoritative
-		_ = err
-	}
+	_ = ix.SaveCache() // best-effort: in-memory index is authoritative
 	e.index = ix
+	e.compiler = compiler
 	return ix, nil
+}
+
+// Compiler returns the compiler retained from the last in-process build, or
+// nil after a cache warm start (Evaluate then compiles once itself, with a
+// hash check against the index).
+func (e *Engine) Compiler() *ast.Compiler {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.compiler
 }
 
 // stale recomputes per-file content hashes and compares against the index.

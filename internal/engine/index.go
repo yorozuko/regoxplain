@@ -49,8 +49,8 @@ type RuleInfo struct {
 	// dependency level away; matches through them are labeled indirect.
 	IndirectLiterals []string `json:"indirect_literals,omitempty"`
 	IndirectAttrs    []string `json:"indirect_attrs,omitempty"`
-	Deps     []string `json:"deps,omitempty"`
-	Doc      string   `json:"doc,omitempty"`
+	Deps             []string `json:"deps,omitempty"`
+	Doc              string   `json:"doc,omitempty"`
 }
 
 // FileError records a file that failed to parse. Parsing is per-file

@@ -11,6 +11,30 @@ import (
 	"github.com/open-policy-agent/opa/v1/ast"
 )
 
+// newCompiler builds the one compiler configuration used by BOTH indexing
+// and evaluation (they must agree, or a repo could index clean and then
+// behave differently at eval). Network and runtime builtins are stripped:
+// a hostile or trojaned .rego file must never be able to call http.send /
+// net.lookup* during eval and exfiltrate terraform plan contents — the
+// tool's whole trust model is "local, reads files, no network".
+func newCompiler() *ast.Compiler {
+	caps := ast.CapabilitiesForThisVersion()
+	blocked := map[string]bool{
+		"http.send":              true,
+		"net.lookup_ip_addr":     true,
+		"net.lookup_ip_addr_all": true,
+		"opa.runtime":            true,
+	}
+	var kept []*ast.Builtin
+	for _, b := range caps.Builtins {
+		if !blocked[b.Name] {
+			kept = append(kept, b)
+		}
+	}
+	caps.Builtins = kept
+	return ast.NewCompiler().WithCapabilities(caps)
+}
+
 // loadModules walks repoPath and parses every .rego file, per-file tolerant.
 // Shared by the indexer (which records errors and continues) and the
 // evaluator (which requires a clean set before any verdict).
