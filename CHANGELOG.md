@@ -30,3 +30,23 @@ Milestone 1: the evidence engine, per the approved design doc
   engine suite; CLI end-to-end suite; race-clean.
 - **Release pipeline** — tag-triggered GitHub Actions matrix
   (darwin/linux × amd64/arm64) publishing to GitHub Releases.
+
+### Review hardening (pre-landing review, same release)
+
+- **Security**: OPA compiled with restricted capabilities — `http.send` /
+  `net.lookup*` / `opa.runtime` stripped so untrusted `.rego` cannot exfiltrate
+  plan contents; evaluation bounded by `--eval-timeout` (default 30s); release
+  workflow token scoped to the release job; third-party action SHA-pinned.
+- **Verdict honesty**: missing-data gate walks the FULL `data.*` path (partial
+  documents no longer suppress the hard error) and sees data refs through
+  helper chains at any depth; scalar-valued rules count as fired; a firing
+  `warn` caps at `probably covered` (detects, does not block); only the
+  best-scoring match may drive `covered`; duplicate `--data` keys fail loudly;
+  `--query` respects package segment boundaries.
+- **Evaluator**: compiler retained from indexing (no re-parse, no stale-file
+  claim race), prepared queries per entrypoint, tracing only on fired pairs,
+  full-path body attribution, per-input attribution honesty.
+- **Fixes**: per-file config path canonicalization (symlinks, trailing slash),
+  alias key normalization, plan `resource_changes` shape validation, version
+  string single-sourced from VERSION, e2e config isolation, plus 10 new tests
+  pinning the review-identified gaps.
