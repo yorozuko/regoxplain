@@ -274,3 +274,43 @@ func TestDataDirDuplicateKeyIsError(t *testing.T) {
 		t.Fatalf("duplicate top-level data keys must fail loudly, got %v", err)
 	}
 }
+
+// Envelope input mode (real-world discovery: policies importing input.plan):
+// a standard plan file must be wrapped under the key, or every rule silently
+// evaluates against undefined — the trap, and the fix, both pinned here.
+func TestEnvelopeInputMode(t *testing.T) {
+	ix, err := BuildIndex(filepath.Join("..", "..", "testdata", "envelope-policies"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The trap: raw mode on an input.plan-importing policy — nothing fires.
+	evalsRaw, _, err := Evaluate(context.Background(), ix, nil, EvalOptions{
+		PlanPath:  planPath(t, "sql-noregion.json"),
+		InputMode: "raw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evalsRaw["data.terraform.envelope.deny"].Fired {
+		t.Fatal("raw mode should NOT fire (input.plan undefined) — that's the trap")
+	}
+	// The fix: envelope:plan wraps the standard plan under input.plan.
+	evals, _, err := Evaluate(context.Background(), ix, nil, EvalOptions{
+		PlanPath:  planPath(t, "sql-noregion.json"),
+		InputMode: "envelope:plan",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deny := evals["data.terraform.envelope.deny"]
+	if deny == nil || !deny.Fired {
+		t.Fatalf("envelope:plan must make the missing-region deny fire: %+v", deny)
+	}
+	if len(deny.Messages) == 0 || !strings.Contains(deny.Messages[0], "missing on google_sql_database_instance.main") {
+		t.Fatalf("expected the missing-region message: %v", deny.Messages)
+	}
+	// Adapter negatives for the new mode.
+	if _, _, err := LoadPlan(planPath(t, "sql-noregion.json"), "envelope:"); err == nil {
+		t.Fatal("bare envelope: must fail with named reason")
+	}
+}

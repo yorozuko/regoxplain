@@ -14,7 +14,8 @@ type InputMode string
 
 const (
 	ModeRaw         InputMode = "raw"          // whole `terraform show -json` doc as input (conftest convention)
-	ModeWrapped     InputMode = "wrapped"      // plan nested under an envelope key: wrapped:<key>
+	ModeWrapped     InputMode = "wrapped"      // the FILE contains an envelope; unwrap key for input: wrapped:<key>
+	ModeEnvelope    InputMode = "envelope"     // the FILE is a raw plan; WRAP it for input: envelope:<key> → input.<key>.* (policies using `import input.<key> as tfplan`)
 	ModePerResource InputMode = "per-resource" // one eval per resource_changes entry
 )
 
@@ -66,6 +67,10 @@ func LoadPlan(path string, mode string) ([]PlanInput, map[string]bool, error) {
 		m = ModeWrapped
 		key = strings.TrimPrefix(mode, "wrapped:")
 	}
+	if strings.HasPrefix(mode, "envelope:") {
+		m = ModeEnvelope
+		key = strings.TrimPrefix(mode, "envelope:")
+	}
 
 	plan := doc
 	if m == ModeWrapped {
@@ -91,6 +96,14 @@ func LoadPlan(path string, mode string) ([]PlanInput, map[string]bool, error) {
 	case ModeWrapped:
 		// CI unwraps before OPA sees it; input is the inner plan.
 		return []PlanInput{{Value: plan}}, types, nil
+	case ModeEnvelope:
+		// CI nests the plan under a key before OPA sees it — policies read
+		// input.<key>.resource_changes (e.g. `import input.plan as tfplan`).
+		// The file on disk is a standard plan; we build the envelope.
+		if key == "" {
+			return nil, nil, adapterErrf("input_mode envelope requires a key: envelope:<key>")
+		}
+		return []PlanInput{{Value: map[string]any{key: doc}}}, types, nil
 	case ModePerResource:
 		rcs, _ := plan["resource_changes"].([]any)
 		var out []PlanInput

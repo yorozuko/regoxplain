@@ -77,6 +77,7 @@ type common struct {
 	query            string
 	allowMissingData bool
 	evalTimeout      time.Duration
+	inputMode        string
 }
 
 func commonFlags(fs *flag.FlagSet) *common {
@@ -87,6 +88,7 @@ func commonFlags(fs *flag.FlagSet) *common {
 	fs.StringVar(&c.query, "query", "", "narrow to a package: data.<pkg>")
 	fs.BoolVar(&c.allowMissingData, "allow-missing-data", false, "evaluate even when data.* refs are unsupplied (verdict capped)")
 	fs.DurationVar(&c.evalTimeout, "eval-timeout", 30*time.Second, "bound on policy evaluation time")
+	fs.StringVar(&c.inputMode, "input-mode", "", "override input shape: raw | wrapped:<key> | envelope:<key> | per-resource")
 	return c
 }
 
@@ -228,7 +230,7 @@ func cmdEval(args []string) error {
 	}
 	opts := engine.EvalOptions{
 		PlanPath:         c.plan,
-		InputMode:        cfg.InputModeFor(c.repo),
+		InputMode:        c.modeOr(cfg),
 		DataDir:          c.dataDir,
 		QueryPrefix:      c.query,
 		AllowMissingData: c.allowMissingData,
@@ -301,7 +303,7 @@ func cmdExplain(args []string) error {
 // reorderArgs to keep "--repo ." together when hoisting flags.
 var valueFlags = map[string]bool{
 	"repo": true, "plan": true, "data": true, "query": true,
-	"eval-timeout": true, "resource": true, "attr": true,
+	"eval-timeout": true, "resource": true, "attr": true, "input-mode": true,
 }
 
 // reorderArgs hoists flags in front of positional arguments. Go's stdlib
@@ -328,6 +330,14 @@ func reorderArgs(args []string) []string {
 		}
 	}
 	return append(flags, pos...)
+}
+
+// modeOr resolves the input mode: explicit flag beats per-repo config.
+func (c *common) modeOr(cfg *engine.Config) string {
+	if c.inputMode != "" {
+		return c.inputMode
+	}
+	return cfg.InputModeFor(c.repo)
 }
 
 func splitCSV(s string) []string {

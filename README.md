@@ -36,7 +36,11 @@ set `input_mode` in `~/.config/regoxplain/config.toml`:
 
 ```toml
 [repos."/abs/path/to/policies"]
-input_mode = "raw"          # or "wrapped:<key>" or "per-resource"
+input_mode = "raw"          # or envelope:<key> / wrapped:<key> / per-resource
+# envelope:plan — for policies that read input.plan.* (e.g.
+#   `import input.plan as tfplan`): a standard plan file is wrapped
+#   under the key before evaluation. Also available per-invocation:
+#   --input-mode envelope:plan
 
 [aliases]                    # your own vague words -> repo terms
 public = ["allUsers", "public_access_prevention"]

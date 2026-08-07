@@ -123,6 +123,7 @@ type searchIn struct {
 	DataDir          string   `json:"data_dir,omitempty" jsonschema:"directory of *.json external data documents (exemption lists etc.)"`
 	AllowMissingData bool     `json:"allow_missing_data,omitempty" jsonschema:"evaluate even when required data.* documents are unsupplied; verdict is capped"`
 	TimeoutSeconds   int      `json:"timeout_seconds,omitempty" jsonschema:"evaluation time bound in seconds (default 30, max 300)"`
+	InputMode        string   `json:"input_mode,omitempty" jsonschema:"override input shape: raw | wrapped:<key> | envelope:<key> (policies importing input.<key>) | per-resource"`
 }
 
 type claimOut struct {
@@ -164,9 +165,13 @@ func (s *Server) searchPolicies(ctx context.Context, _ *mcp.CallToolRequest, in 
 			if cfgErr != nil {
 				return nil, searchOut{}, cfgErr
 			}
+			mode := in.InputMode
+			if mode == "" {
+				mode = cfg.InputModeFor(eng.RepoPath)
+			}
 			evals, typesInPlan, err = engine.Evaluate(ctx, ix, compiler, engine.EvalOptions{
 				PlanPath:         in.PlanPath,
-				InputMode:        cfg.InputModeFor(eng.RepoPath),
+				InputMode:        mode,
 				DataDir:          in.DataDir,
 				AllowMissingData: in.AllowMissingData,
 				OnlyRulePaths:    paths,
@@ -244,6 +249,7 @@ type evalIn struct {
 	DataDir          string `json:"data_dir,omitempty" jsonschema:"directory of *.json external data documents"`
 	AllowMissingData bool   `json:"allow_missing_data,omitempty" jsonschema:"evaluate even when required data.* documents are unsupplied"`
 	TimeoutSeconds   int    `json:"timeout_seconds,omitempty" jsonschema:"evaluation time bound in seconds (default 30, max 300)"`
+	InputMode        string `json:"input_mode,omitempty" jsonschema:"override input shape: raw | wrapped:<key> | envelope:<key> (policies importing input.<key>) | per-resource"`
 }
 
 type firedRule struct {
@@ -277,9 +283,13 @@ func (s *Server) evalAgainstPlan(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, evalOut{}, err
 	}
+	mode := in.InputMode
+	if mode == "" {
+		mode = cfg.InputModeFor(eng.RepoPath)
+	}
 	evals, _, err := engine.Evaluate(ctx, ix, compiler, engine.EvalOptions{
 		PlanPath:         in.PlanPath,
-		InputMode:        cfg.InputModeFor(eng.RepoPath),
+		InputMode:        mode,
 		QueryPrefix:      in.Query,
 		DataDir:          in.DataDir,
 		AllowMissingData: in.AllowMissingData,
