@@ -1,0 +1,139 @@
+package main_test
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+var binPath string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "regoxplain-e2e")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	binPath = filepath.Join(dir, "regoxplain")
+	build := exec.Command("go", "build", "-o", binPath, ".")
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		panic("building regoxplain for e2e: " + err.Error())
+	}
+	os.Exit(m.Run())
+}
+
+func run(t *testing.T, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(binPath, args...)
+	cmd.Env = append(os.Environ(), "REGOXPLAIN_CACHE_DIR="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running %v: %v", args, err)
+	}
+	return string(out), code
+}
+
+func fixtures(parts ...string) string {
+	return filepath.Join(append([]string{"..", "..", "testdata"}, parts...)...)
+}
+
+func TestE2ECoveredVerdict(t *testing.T) {
+	out, code := run(t,
+		"search", "--repo", fixtures("policies"),
+		"--resource", "google_storage_bucket_iam_member",
+		"--plan", fixtures("plans", "violating.json"),
+	)
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Verdict: covered") || !strings.Contains(out, "[verified-by-eval]") {
+		t.Fatalf("want covered verdict with eval evidence:\n%s", out)
+	}
+	if !strings.Contains(out, "deny_public_bucket.rego:") {
+		t.Fatalf("want file:line citation:\n%s", out)
+	}
+}
+
+func TestE2EHonestMiss(t *testing.T) {
+	out, code := run(t, "ask", "--repo", fixtures("policies"), "is the flurblewumpus covered?")
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "not proven") || !strings.Contains(out, "no AST evidence") {
+		t.Fatalf("miss must be honest:\n%s", out)
+	}
+}
+
+func TestE2EAskFreeText(t *testing.T) {
+	out, code := run(t, "ask", "--repo", fixtures("policies"), "is a public bucket denied?")
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Verdict:") || !strings.Contains(out, "deny") {
+		t.Fatalf("free-text ask should reach the storage rules via vocab:\n%s", out)
+	}
+}
+
+func TestE2EExplainBundle(t *testing.T) {
+	out, code := run(t, "explain", "--repo", fixtures("policies"), "data.terraform.network.deny")
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+	for _, want := range []string{"Explain bundle", "deny_open_firewall.rego", "helpers.rego", "firewall_is_open"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("bundle missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestE2EWrongFileError(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "plan.out")
+	if err := os.WriteFile(bin, []byte("PK\x03\x04\x00binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := run(t, "eval", "--repo", fixtures("policies"), "--plan", bin, "--query", "data.terraform.storage")
+	if code == 0 {
+		t.Fatalf("binary planfile must fail:\n%s", out)
+	}
+	if !strings.Contains(out, "terraform show -json") {
+		t.Fatalf("error must name the fix:\n%s", out)
+	}
+}
+
+func TestE2EUnknownRuleError(t *testing.T) {
+	out, code := run(t, "explain", "--repo", fixtures("policies"), "data.nope.deny")
+	if code == 0 {
+		t.Fatalf("unknown rule must exit non-zero:\n%s", out)
+	}
+	if !strings.Contains(out, "no rules found") {
+		t.Fatalf("error should say no rules found:\n%s", out)
+	}
+}
+
+func TestE2EMissingDataHardError(t *testing.T) {
+	out, code := run(t, "eval", "--repo", fixtures("policies"),
+		"--plan", fixtures("plans", "violating.json"), "--query", "data.terraform.iam")
+	if code == 0 {
+		t.Fatalf("missing data must fail hard:\n%s", out)
+	}
+	if !strings.Contains(out, "data.exemptions") || !strings.Contains(out, "--allow-missing-data") {
+		t.Fatalf("error must name document and escape hatch:\n%s", out)
+	}
+
+	out2, code2 := run(t, "eval", "--repo", fixtures("policies"),
+		"--plan", fixtures("plans", "violating.json"), "--query", "data.terraform.iam",
+		"--data", fixtures("data"))
+	if code2 != 0 {
+		t.Fatalf("with --data eval should pass, exit %d:\n%s", code2, out2)
+	}
+	if !strings.Contains(out2, "FIRED") {
+		t.Fatalf("iam deny should fire with data supplied:\n%s", out2)
+	}
+}

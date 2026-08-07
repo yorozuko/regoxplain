@@ -1,0 +1,59 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "resource_changes": [
+    {
+      "address": "google_storage_bucket_iam_member.public_reader",
+      "type": "google_storage_bucket_iam_member",
+      "name": "public_reader",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "bucket": "team-data",
+          "role": "roles/storage.objectViewer",
+          "member": "allUsers"
+        }
+      }
+    },
+    {
+      "address": "google_storage_bucket.team_data",
+      "type": "google_storage_bucket",
+      "name": "team_data",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "team-data",
+          "location": "US",
+          "public_access_prevention": "enforced",
+          "uniform_bucket_level_access": false
+        }
+      }
+    },
+    {
+      "address": "google_compute_firewall.allow_all",
+      "type": "google_compute_firewall",
+      "name": "allow_all",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "allow-all",
+          "direction": "INGRESS",
+          "source_ranges": ["0.0.0.0/0"]
+        }
+      }
+    },
+    {
+      "address": "google_project_iam_member.contractor_owner",
+      "type": "google_project_iam_member",
+      "name": "contractor_owner",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "project": "team-project",
+          "role": "roles/owner",
+          "member": "user:contractor@example.com"
+        }
+      }
+    }
+  ]
+}

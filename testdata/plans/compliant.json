@@ -1,0 +1,46 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "resource_changes": [
+    {
+      "address": "google_storage_bucket_iam_member.app_reader",
+      "type": "google_storage_bucket_iam_member",
+      "name": "app_reader",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "bucket": "team-data",
+          "role": "roles/storage.objectViewer",
+          "member": "serviceAccount:app@team-project.iam.gserviceaccount.com"
+        }
+      }
+    },
+    {
+      "address": "google_storage_bucket.team_data",
+      "type": "google_storage_bucket",
+      "name": "team_data",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "team-data",
+          "location": "US",
+          "public_access_prevention": "enforced",
+          "uniform_bucket_level_access": true
+        }
+      }
+    },
+    {
+      "address": "google_compute_firewall.allow_office",
+      "type": "google_compute_firewall",
+      "name": "allow_office",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "allow-office",
+          "direction": "INGRESS",
+          "source_ranges": ["10.8.0.0/16"]
+        }
+      }
+    }
+  ]
+}

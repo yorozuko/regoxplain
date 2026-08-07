@@ -1,0 +1,17 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "resource_changes": [
+    {
+      "address": "google_pubsub_topic.events",
+      "type": "google_pubsub_topic",
+      "name": "events",
+      "change": {
+        "actions": ["create"],
+        "after": {
+          "name": "events"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "exemptions": {
+    "members": [
+      "user:platform-admin@example.com"
+    ]
+  }
+}

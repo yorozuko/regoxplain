@@ -1,0 +1,21 @@
+{
+  "plan": {
+    "format_version": "1.2",
+    "terraform_version": "1.9.0",
+    "resource_changes": [
+      {
+        "address": "google_compute_firewall.allow_all",
+        "type": "google_compute_firewall",
+        "name": "allow_all",
+        "change": {
+          "actions": ["create"],
+          "after": {
+            "name": "allow-all",
+            "direction": "INGRESS",
+            "source_ranges": ["0.0.0.0/0"]
+          }
+        }
+      }
+    ]
+  }
+}
