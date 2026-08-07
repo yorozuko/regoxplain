@@ -1,4 +1,4 @@
-module github.com/yorozu/regoxplain
+module github.com/yorozuko/regoxplain
 
 go 1.26.5
 

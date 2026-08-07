@@ -3,8 +3,10 @@ FIXTURES := testdata/policies
 
 .PHONY: build test race lint index demo clean
 
+VERSION_STR := $(shell cat VERSION)
+
 build:
-	go build -o bin/$(BINARY) ./cmd/regoxplain
+	go build -ldflags "-X main.version=v$(VERSION_STR)" -o bin/$(BINARY) ./cmd/regoxplain
 
 test:
 	go test ./... -count=1

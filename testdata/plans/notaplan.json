@@ -1,0 +1,6 @@
+{
+  "kind": "Deployment",
+  "metadata": {
+    "name": "not-a-terraform-plan"
+  }
+}
