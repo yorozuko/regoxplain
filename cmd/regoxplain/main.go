@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yorozuko/regoxplain/internal/engine"
+	"github.com/yorozuko/regoxplain/internal/mcpserver"
 )
 
 func main() {
@@ -35,6 +37,8 @@ func main() {
 		err = cmdEval(args)
 	case "explain":
 		err = cmdExplain(args)
+	case "mcp":
+		err = cmdMCP(args)
 	case "version":
 		fmt.Println(version)
 	default:
@@ -61,6 +65,7 @@ usage:
   regoxplain ask     "<question>" [--repo] [--plan plan.json] [--data dir] [--allow-missing-data]
   regoxplain eval    --plan plan.json [--repo] [--query data.<pkg>] [--data dir] [--allow-missing-data]
   regoxplain explain <rule-path|file.rego> [--repo]
+  regoxplain mcp     [--repo <path>]   # MCP stdio server for Copilot/Claude
 `)
 }
 
@@ -255,6 +260,19 @@ func cmdEval(args []string) error {
 	}
 	fmt.Printf("%d/%d entrypoint rules fired\n", fired, len(evals))
 	return nil
+}
+
+// cmdMCP runs the Milestone 2 stdio MCP server: the host (Copilot, Claude)
+// launches this as a subprocess and narrates over the engine's grounded
+// evidence. No port, no daemon — JSON-RPC over stdin/stdout.
+func cmdMCP(args []string) error {
+	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	repo := fs.String("repo", ".", "default policy repo path (tools may override per call)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	srv := mcpserver.New(*repo)
+	return srv.MCP(version).Run(context.Background(), &mcp.StdioTransport{})
 }
 
 func cmdExplain(args []string) error {
