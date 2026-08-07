@@ -21,7 +21,7 @@ func session(t *testing.T, defaultRepo string) *mcp.ClientSession {
 	t.Helper()
 	t.Setenv("REGOXPLAIN_CACHE_DIR", t.TempDir())
 	ct, st := mcp.NewInMemoryTransports()
-	srv := New(defaultRepo).MCP("test")
+	srv := New(defaultRepo, false).MCP("test")
 	go func() {
 		_ = srv.Run(context.Background(), st)
 	}()
@@ -45,6 +45,9 @@ func call(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any)
 
 func textOf(t *testing.T, res *mcp.CallToolResult) string {
 	t.Helper()
+	if res == nil {
+		return "<nil result>"
+	}
 	var b strings.Builder
 	for _, c := range res.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
@@ -93,8 +96,9 @@ func TestSearchPoliciesWithEval(t *testing.T) {
 	}
 }
 
-func TestSearchPoliciesDefaultRepoAndOverride(t *testing.T) {
-	// Default repo is the fixture repo; override points at the scalar repo.
+func TestSearchPoliciesDefaultRepoAndOverrideGate(t *testing.T) {
+	// Default repo is the fixture repo; override is DENIED by default (M2
+	// review: tool inputs are model-controlled).
 	cs := session(t, fixtures("policies"))
 	res := call(t, cs, "search_policies", map[string]any{"terms": []string{"pubsub"}})
 	if !strings.Contains(textOf(t, res), "not proven") {
@@ -104,8 +108,54 @@ func TestSearchPoliciesDefaultRepoAndOverride(t *testing.T) {
 		"repo":  fixtures("scalar-policies"),
 		"terms": []string{"pubsub"},
 	})
-	if !strings.Contains(textOf(t, res2), "deny") {
-		t.Fatalf("override repo should match its scalar deny:\n%s", textOf(t, res2))
+	if !res2.IsError || !strings.Contains(textOf(t, res2), "override") {
+		t.Fatalf("repo override must be rejected without --allow-repo-override:\n%s", textOf(t, res2))
+	}
+}
+
+func TestRepoOverrideWhenPermitted(t *testing.T) {
+	t.Setenv("REGOXPLAIN_CACHE_DIR", t.TempDir())
+	ct, st := mcp.NewInMemoryTransports()
+	srv := New(fixtures("policies"), true).MCP("test")
+	go func() { _ = srv.Run(context.Background(), st) }()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+	cs, err := client.Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	res := call(t, cs, "search_policies", map[string]any{
+		"repo":  fixtures("scalar-policies"),
+		"terms": []string{"pubsub"},
+	})
+	if res.IsError || !strings.Contains(textOf(t, res), "deny") {
+		t.Fatalf("permitted override should match the scalar repo:\n%s", textOf(t, res))
+	}
+}
+
+func TestWarmStartServesFromCache(t *testing.T) {
+	// One shared cache dir across two server instances: the second starts
+	// warm and must still answer with a retained compiler (Snapshot builds
+	// it once — no per-eval reparse).
+	cache := t.TempDir()
+	t.Setenv("REGOXPLAIN_CACHE_DIR", cache)
+	for i := 0; i < 2; i++ {
+		ct, st := mcp.NewInMemoryTransports()
+		srv := New(fixtures("policies"), false).MCP("test")
+		go func() { _ = srv.Run(context.Background(), st) }()
+		client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+		cs, err := client.Connect(context.Background(), ct, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := call(t, cs, "search_policies", map[string]any{
+			"resources": []string{"google_storage_bucket_iam_member"},
+			"plan_path": fixtures("plans", "violating.json"),
+		})
+		if res.IsError || !strings.Contains(textOf(t, res), "Verdict: covered") {
+			t.Fatalf("run %d: want covered verdict:\n%s", i, textOf(t, res))
+		}
+		_ = cs.Close()
 	}
 }
 

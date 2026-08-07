@@ -33,32 +33,63 @@ func New(repoPath string) *Engine {
 // .rego file hash changed (auto-index is the default; an explicit `index`
 // run is an optimization, never a prerequisite).
 func (e *Engine) Ensure() (*Index, error) {
+	ix, _, err := e.Snapshot()
+	return ix, err
+}
+
+// Snapshot returns the index and its matching compiler as ONE atomic pair
+// under the mutex. Callers must never fetch them separately — a concurrent
+// rebuild between two calls would pair a stale index with a newer compiler,
+// bypassing Evaluate's hash verification and producing wrong file:line
+// citations (M2 review finding). On a cache warm start the compiler is
+// built once here and retained, so a long-lived MCP server never re-parses
+// the repo per eval call.
+func (e *Engine) Snapshot() (*Index, *ast.Compiler, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.index == nil {
 		e.index = LoadCache(e.RepoPath)
+		e.compiler = nil
 	}
-	if e.index != nil && !e.stale(e.index) {
-		return e.index, nil
+	if e.index == nil || e.stale(e.index) {
+		ix, compiler, err := buildIndexFull(e.RepoPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		_ = ix.SaveCache() // best-effort: in-memory index is authoritative
+		e.index = ix
+		e.compiler = compiler
+		return e.index, e.compiler, nil
 	}
-	ix, compiler, err := buildIndexFull(e.RepoPath)
-	if err != nil {
-		return nil, err
+	if e.compiler == nil && e.index.CleanCompile() {
+		// Warm start: compile once, verify the disk still matches the
+		// cached index, and retain.
+		abs, err := filepath.Abs(e.RepoPath)
+		if err == nil {
+			modules, hashes, errs, lerr := loadModules(abs)
+			if lerr == nil && len(errs) == 0 && hashesEqual(hashes, e.index.FileHashes) {
+				c := newCompiler()
+				c.Compile(modules)
+				if !c.Failed() {
+					e.compiler = c
+				}
+			}
+		}
 	}
-	_ = ix.SaveCache() // best-effort: in-memory index is authoritative
-	e.index = ix
-	e.compiler = compiler
-	return ix, nil
+	return e.index, e.compiler, nil
 }
 
-// Compiler returns the compiler retained from the last in-process build, or
-// nil after a cache warm start (Evaluate then compiles once itself, with a
-// hash check against the index).
-func (e *Engine) Compiler() *ast.Compiler {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.compiler
+func hashesEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // stale recomputes per-file content hashes and compares against the index.

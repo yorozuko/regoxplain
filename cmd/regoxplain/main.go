@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/yorozuko/regoxplain/internal/engine"
 	"github.com/yorozuko/regoxplain/internal/mcpserver"
 )
@@ -131,11 +132,11 @@ func cmdSearch(args []string, presetTerms []string) error {
 		return err
 	}
 	eng := engine.New(c.repo)
-	ix, err := eng.Ensure()
+	ix, compiler, err := eng.Snapshot()
 	if err != nil {
 		return err
 	}
-	return runSearch(c, cfg, eng, ix, params, nil)
+	return runSearch(c, cfg, ix, compiler, params, nil)
 }
 
 func cmdAsk(args []string) error {
@@ -154,7 +155,7 @@ func cmdAsk(args []string) error {
 		return err
 	}
 	eng := engine.New(c.repo)
-	ix, err := eng.Ensure()
+	ix, compiler, err := eng.Snapshot()
 	if err != nil {
 		return err
 	}
@@ -166,10 +167,10 @@ func cmdAsk(args []string) error {
 	}
 	// Reuse the loaded config and index — a second Ensure would re-walk
 	// and re-hash the whole repo for nothing.
-	return runSearch(c, cfg, eng, ix, engine.SearchParams{Terms: terms}, misses)
+	return runSearch(c, cfg, ix, compiler, engine.SearchParams{Terms: terms}, misses)
 }
 
-func runSearch(c *common, cfg *engine.Config, eng *engine.Engine, ix *engine.Index, params engine.SearchParams, misses []string) error {
+func runSearch(c *common, cfg *engine.Config, ix *engine.Index, compiler *ast.Compiler, params engine.SearchParams, misses []string) error {
 	matches := engine.Search(ix, params)
 
 	var evals map[string]*engine.EvalResult
@@ -193,7 +194,7 @@ func runSearch(c *common, cfg *engine.Config, eng *engine.Engine, ix *engine.Ind
 				Timeout:          c.evalTimeout,
 			}
 			var err error
-			evals, typesInPlan, err = engine.Evaluate(context.Background(), ix, eng.Compiler(), opts)
+			evals, typesInPlan, err = engine.Evaluate(context.Background(), ix, compiler, opts)
 			if err != nil {
 				return err
 			}
@@ -221,8 +222,7 @@ func cmdEval(args []string) error {
 	if err != nil {
 		return err
 	}
-	eng := engine.New(c.repo)
-	ix, err := eng.Ensure()
+	ix, compiler, err := engine.New(c.repo).Snapshot()
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func cmdEval(args []string) error {
 		AllowMissingData: c.allowMissingData,
 		Timeout:          c.evalTimeout,
 	}
-	evals, _, err := engine.Evaluate(context.Background(), ix, eng.Compiler(), opts)
+	evals, _, err := engine.Evaluate(context.Background(), ix, compiler, opts)
 	if err != nil {
 		return err
 	}
@@ -267,11 +267,12 @@ func cmdEval(args []string) error {
 // evidence. No port, no daemon — JSON-RPC over stdin/stdout.
 func cmdMCP(args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
-	repo := fs.String("repo", ".", "default policy repo path (tools may override per call)")
+	repo := fs.String("repo", ".", "policy repo the server is confined to")
+	allowOverride := fs.Bool("allow-repo-override", false, "permit tool calls to name other repos (model-controlled — opt in deliberately)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	srv := mcpserver.New(*repo)
+	srv := mcpserver.New(*repo, *allowOverride)
 	return srv.MCP(version).Run(context.Background(), &mcp.StdioTransport{})
 }
 
