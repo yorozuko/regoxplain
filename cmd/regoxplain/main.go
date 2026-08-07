@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yorozu/regoxplain/internal/engine"
+	"github.com/yorozuko/regoxplain/internal/engine"
 )
 
 func main() {
