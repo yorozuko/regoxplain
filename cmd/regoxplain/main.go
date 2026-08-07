@@ -93,7 +93,7 @@ func commonFlags(fs *flag.FlagSet) *common {
 func cmdIndex(args []string) error {
 	fs := flag.NewFlagSet("index", flag.ExitOnError)
 	c := commonFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	ix, err := engine.New(c.repo).Ensure()
@@ -118,7 +118,7 @@ func cmdSearch(args []string, presetTerms []string) error {
 	c := commonFlags(fs)
 	resources := fs.String("resource", "", "comma-separated resource types (e.g. google_storage_bucket)")
 	attrs := fs.String("attr", "", "comma-separated attribute names (e.g. members)")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	terms := append(presetTerms, fs.Args()...)
@@ -142,7 +142,7 @@ func cmdSearch(args []string, presetTerms []string) error {
 func cmdAsk(args []string) error {
 	fs := flag.NewFlagSet("ask", flag.ExitOnError)
 	c := commonFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
@@ -212,7 +212,7 @@ func runSearch(c *common, cfg *engine.Config, ix *engine.Index, compiler *ast.Co
 func cmdEval(args []string) error {
 	fs := flag.NewFlagSet("eval", flag.ExitOnError)
 	c := commonFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	if c.plan == "" {
@@ -269,7 +269,7 @@ func cmdMCP(args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
 	repo := fs.String("repo", ".", "policy repo the server is confined to")
 	allowOverride := fs.Bool("allow-repo-override", false, "permit tool calls to name other repos (model-controlled — opt in deliberately)")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	srv := mcpserver.New(*repo, *allowOverride)
@@ -279,7 +279,7 @@ func cmdMCP(args []string) error {
 func cmdExplain(args []string) error {
 	fs := flag.NewFlagSet("explain", flag.ExitOnError)
 	c := commonFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
@@ -295,6 +295,39 @@ func cmdExplain(args []string) error {
 	}
 	fmt.Print(engine.RenderBundle(b))
 	return nil
+}
+
+// valueFlags are the flags that consume a following argument. Needed by
+// reorderArgs to keep "--repo ." together when hoisting flags.
+var valueFlags = map[string]bool{
+	"repo": true, "plan": true, "data": true, "query": true,
+	"eval-timeout": true, "resource": true, "attr": true,
+}
+
+// reorderArgs hoists flags in front of positional arguments. Go's stdlib
+// flag package stops parsing at the first positional, so the natural
+// invocation `explain data.pkg.deny --repo .` would otherwise fail with a
+// usage error (and `ask "question" --plan x` would swallow the flags into
+// the question text).
+func reorderArgs(args []string) []string {
+	var flags, pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "-") {
+			pos = append(pos, a)
+			continue
+		}
+		flags = append(flags, a)
+		name := strings.TrimLeft(a, "-")
+		if strings.Contains(name, "=") {
+			continue // --repo=. carries its value inline
+		}
+		if valueFlags[name] && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, pos...)
 }
 
 func splitCSV(s string) []string {

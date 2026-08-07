@@ -148,3 +148,21 @@ func TestE2EMissingDataHardError(t *testing.T) {
 		t.Fatalf("iam deny should fire with data supplied:\n%s", out2)
 	}
 }
+
+// Regression: flags must work AFTER positional args — stdlib flag stops at
+// the first positional, which made the documented `explain <rule> --repo .`
+// invocation fail with a usage error (and would have folded trailing flags
+// into ask's question text).
+func TestE2EFlagsAfterPositional(t *testing.T) {
+	out, code := run(t, "explain", "data.terraform.network.deny", "--repo", fixtures("policies"))
+	if code != 0 || !strings.Contains(out, "deny_open_firewall.rego") {
+		t.Fatalf("explain with trailing --repo failed (exit %d):\n%s", code, out)
+	}
+	out2, code2 := run(t, "ask", "is a public bucket denied?", "--repo", fixtures("policies"))
+	if code2 != 0 || !strings.Contains(out2, "Verdict:") {
+		t.Fatalf("ask with trailing --repo failed (exit %d):\n%s", code2, out2)
+	}
+	if strings.Contains(out2, "repo") && strings.Contains(out2, "no AST evidence for: repo") {
+		t.Fatalf("trailing flag leaked into the question tokens:\n%s", out2)
+	}
+}
