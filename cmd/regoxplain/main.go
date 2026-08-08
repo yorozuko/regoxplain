@@ -292,10 +292,12 @@ func cmdTUI(args []string) error {
 		return err
 	}
 	m, err := tui.New(tui.Options{
-		Repo:      c.repo,
-		PlanPath:  c.plan,
-		InputMode: c.inputMode,
-		DataDir:   c.dataDir,
+		Repo:             c.repo,
+		PlanPath:         c.plan,
+		InputMode:        c.inputMode,
+		DataDir:          c.dataDir,
+		AllowMissingData: c.allowMissingData,
+		EvalTimeout:      c.evalTimeout,
 	})
 	if err != nil {
 		return err
