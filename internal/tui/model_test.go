@@ -252,3 +252,13 @@ func TestBundleShowsLineNumbers(t *testing.T) {
 		t.Fatalf("bundle should number source lines:\n%s", m.bundle[:min(len(m.bundle), 400)])
 	}
 }
+
+// A broken repo's banner must survive searching — it explains why ctrl+e
+// will refuse (found via user screenshot: banner was overwritten).
+func TestBrokenRepoBannerPersists(t *testing.T) {
+	m := newModel(t, Options{Repo: fixtures("broken-policies")})
+	typeText(m, "bucket")
+	if !strings.Contains(m.View(), "⚠") || !strings.Contains(m.View(), "eval is blocked") {
+		t.Fatalf("broken-repo banner must persist through searches:\n%s", m.View())
+	}
+}

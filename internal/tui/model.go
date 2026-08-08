@@ -55,6 +55,7 @@ type Model struct {
 	ix       *engine.Index
 	compiler *ast.Compiler
 
+	banner    string // repo parse/compile problems — persistent, never overwritten
 	input     textinput.Model
 	lastQuery string
 	matches   []engine.Match
@@ -100,9 +101,7 @@ func New(opts Options) (*Model, error) {
 		input:    ti,
 		status:   "ready — type to search · ↑/↓ select · ctrl+e evaluate · ctrl+r refresh repo · pgup/pgdn scroll · esc clear · ctrl+c quit",
 	}
-	if banner := ix.Brokenness(); banner != "" {
-		m.status = "⚠ " + banner
-	}
+	m.banner = ix.Brokenness()
 	return m, nil
 }
 
@@ -196,12 +195,10 @@ func (m *Model) refreshSnapshot() {
 		return
 	}
 	m.ix, m.compiler = ix, compiler
+	m.banner = ix.Brokenness()
 	m.lastQuery = "\x00" // force re-search
 	m.search()
 	m.status = "repo refreshed"
-	if banner := ix.Brokenness(); banner != "" {
-		m.status = "⚠ " + banner
-	}
 }
 
 // search runs the live AST-backed query against the CACHED snapshot. It is
@@ -374,7 +371,11 @@ func (m *Model) View() string {
 	end := min(len(m.matches), m.listOff+bodyH)
 	for i := m.listOff; i < end; i++ {
 		match := m.matches[i]
-		line := truncate(fmt.Sprintf("%s %s:%d %s", match.Rule.Kind, match.Rule.File, match.Rule.Row, match.Rule.Name), listW-2)
+		label := match.Rule.Kind
+		if match.Rule.Name != match.Rule.Kind {
+			label += " " + match.Rule.Name
+		}
+		line := truncate(fmt.Sprintf("%s  %s:%d", label, match.Rule.File, match.Rule.Row), listW-2)
 		if i == m.sel {
 			line = selStyle.Render(line)
 		}
@@ -411,6 +412,9 @@ func (m *Model) View() string {
 	statusLine := m.status
 	if m.err != "" {
 		statusLine = "error: " + m.err
+	}
+	if m.banner != "" {
+		statusLine = "⚠ " + m.banner + " · " + statusLine
 	}
 
 	panes := lipgloss.JoinHorizontal(lipgloss.Top,
