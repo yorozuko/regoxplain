@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/yorozuko/regoxplain/internal/engine"
 	"github.com/yorozuko/regoxplain/internal/mcpserver"
+	"github.com/yorozuko/regoxplain/internal/tui"
 )
 
 func main() {
@@ -40,6 +42,8 @@ func main() {
 		err = cmdExplain(args)
 	case "mcp":
 		err = cmdMCP(args)
+	case "tui":
+		err = cmdTUI(args)
 	case "version":
 		fmt.Println(version)
 	default:
@@ -67,6 +71,7 @@ usage:
   regoxplain eval    --plan plan.json [--repo] [--query data.<pkg>] [--data dir] [--allow-missing-data]
   regoxplain explain <rule-path|file.rego> [--repo]
   regoxplain mcp     [--repo <path>]   # MCP stdio server for Copilot/Claude
+  regoxplain tui     [--repo] [--plan plan.json] [--input-mode m] [--data dir]
 `)
 }
 
@@ -276,6 +281,29 @@ func cmdMCP(args []string) error {
 	}
 	srv := mcpserver.New(*repo, *allowOverride)
 	return srv.MCP(version).Run(context.Background(), &mcp.StdioTransport{})
+}
+
+// cmdTUI runs the Milestone 3 terminal interface — the frontend a workplace
+// cannot disable. Live AST search; ctrl+e for verified evaluation.
+func cmdTUI(args []string) error {
+	fs := flag.NewFlagSet("tui", flag.ExitOnError)
+	c := commonFlags(fs)
+	if err := fs.Parse(reorderArgs(args)); err != nil {
+		return err
+	}
+	m, err := tui.New(tui.Options{
+		Repo:             c.repo,
+		PlanPath:         c.plan,
+		InputMode:        c.inputMode,
+		DataDir:          c.dataDir,
+		AllowMissingData: c.allowMissingData,
+		EvalTimeout:      c.evalTimeout,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	return err
 }
 
 func cmdExplain(args []string) error {

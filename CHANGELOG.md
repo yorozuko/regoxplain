@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 — 2026-08-06
+
+Milestone 3: the TUI — the interface a workplace cannot disable. Promoted
+from "optional future" after work's org policy blocked MCP in Copilot
+(the design doc's revisit trigger fired).
+
+- **`regoxplain tui [--repo] [--plan] [--input-mode] [--data]`** — Bubble Tea
+  terminal UI: live free-text search through the repo vocabulary, arrow-key
+  match selection with the grounded explain bundle in the evidence pane,
+  and explicit ctrl+e evaluation against a plan. The verdict bar always
+  states its evidence level: "backed-by-AST only — ctrl+e to verify" until
+  evaluation runs.
+- **`envelope:<key>` input mode** (also in this release line): for policies
+  reading `input.<key>.*` (`import input.plan as tfplan` — the real-world
+  contract discovered on first contact with a work policy); plus
+  `--input-mode` CLI override and `input_mode` MCP tool parameter.
+- CLI flags now work after positional args (`explain <rule> --repo .`).
+
+
 ## 0.2.0 — 2026-08-06
 
 Milestone 2: the MCP server — regoxplain becomes conversational
