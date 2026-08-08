@@ -93,7 +93,13 @@ func RenderBundle(b *ExplainBundle) string {
 	}
 	sort.Strings(files)
 	for _, f := range files {
-		fmt.Fprintf(&sb, "--- %s ---\n%s\n", f, b.Sources[f])
+		fmt.Fprintf(&sb, "--- %s ---\n", f)
+		// Real per-file line numbers: claims cite file:line, so the bundle
+		// must let a reader (or a narrating model) check citations directly.
+		for i, line := range strings.Split(strings.TrimRight(b.Sources[f], "\n"), "\n") {
+			fmt.Fprintf(&sb, "%4d │ %s\n", i+1, line)
+		}
+		sb.WriteString("\n")
 	}
 	return sb.String()
 }

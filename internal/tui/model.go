@@ -132,6 +132,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("evaluated against %s [%s]", m.opts.PlanPath, m.opts.InputMode)
 		return m, nil
 
+	case tea.MouseMsg:
+		// Wheel scrolls the evidence pane — pgup/pgdn work too, but the
+		// wheel is what hands reach for.
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scroll = max(0, m.scroll-3)
+		case tea.MouseButtonWheelDown:
+			m.scroll = min(max(0, len(m.bundleLines)-1), m.scroll+3)
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC:

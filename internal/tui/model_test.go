@@ -225,3 +225,30 @@ func TestListWindowFollowsSelection(t *testing.T) {
 		t.Fatalf("selection %d outside window [%d,%d)", m.sel, m.listOff, m.listOff+m.bodyHeight())
 	}
 }
+
+// Mouse wheel scrolls the evidence pane.
+func TestMouseWheelScrollsEvidence(t *testing.T) {
+	m := newModel(t, Options{Repo: fixtures("policies")})
+	typeText(m, "bucket")
+	if len(m.bundleLines) < 5 {
+		t.Fatalf("need a multi-line bundle, got %d lines", len(m.bundleLines))
+	}
+	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	if m.scroll != 3 {
+		t.Fatalf("wheel down should scroll +3, got %d", m.scroll)
+	}
+	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelUp})
+	if m.scroll != 0 {
+		t.Fatalf("wheel up should scroll back, got %d", m.scroll)
+	}
+}
+
+// Bundle sources carry real per-file line numbers so claims' file:line
+// citations are directly checkable in the evidence pane.
+func TestBundleShowsLineNumbers(t *testing.T) {
+	m := newModel(t, Options{Repo: fixtures("policies")})
+	typeText(m, "firewall")
+	if !strings.Contains(m.bundle, "   1 │ ") {
+		t.Fatalf("bundle should number source lines:\n%s", m.bundle[:min(len(m.bundle), 400)])
+	}
+}
